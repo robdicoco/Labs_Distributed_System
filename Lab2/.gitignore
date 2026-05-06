@@ -1,3 +1,7 @@
+# Lab policy: no HTML artifacts in this tree
+*.html
+*.htm
+
 # Python-generated files
 __pycache__/
 *.py[oc]
