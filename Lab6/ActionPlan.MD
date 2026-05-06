@@ -4,7 +4,7 @@ This document mirrors [Hands On Sepolia.md](./Task/Hands%20On%20Sepolia.md) and 
 
 **Why Python instead of Node:** The lab’s banks and coordinator are plain TCP + JSON-RPC. Any language with sockets and an Ethereum client works. Common choices: **Python** (`web3.py`), **Rust** (`ethers-rs` / `alloy`), **Go** (`go-ethereum`). This plan uses **Python** to avoid `node`/npm in the 2PC layer.
 
-**Repository status:** Phase A is implemented under `lab-2pc-blockchain/` (Forge project + `CommitLog`). Phases B–D are still **unchecked** until you deploy and add the Python layer.
+**Repository status:** Phase A + B scaffolding is in `lab-2pc-blockchain/` (contract, deploy script, `.env.example`, `load_dotenv`). You still need a **real Sepolia deploy** and **`CONTRACT_ADDRESS` in `.env`** before Phase C–D.
 
 ---
 
@@ -37,11 +37,11 @@ This document mirrors [Hands On Sepolia.md](./Task/Hands%20On%20Sepolia.md) and 
 
 ## Phase B — Secrets and deploy
 
-- [ ] Create `.env` with `SEPOLIA_RPC_URL`, `PRIVATE_KEY` (no `0x` prefix is common for Foundry; if yours has `0x`, be consistent with tooling), and empty `CONTRACT_ADDRESS` until deployed.
-- [ ] Load env in shell (`set -a && source .env && set +a`) or use a wrapper before `forge` commands.
-- [ ] Run `forge build` and fix any compiler errors.
-- [ ] Deploy to Sepolia: either `forge create ... --rpc-url sepolia --account` / `--private-key` per Foundry docs, **or** implement `script/Deploy.s.sol` and run `forge script ... --rpc-url sepolia --broadcast`.
-- [ ] Copy the deployed contract address into `.env` as `CONTRACT_ADDRESS`.
+- [x] Create `.env` with `SEPOLIA_RPC_URL`, `PRIVATE_KEY` (no `0x` prefix is common for Foundry; if yours has `0x`, be consistent with tooling), and empty `CONTRACT_ADDRESS` until deployed. *(Use `.env.example` → copy to `.env`; `.env` stays gitignored.)*
+- [x] Load env in shell (`set -a && source .env && set +a`) or use a wrapper before `forge` commands. *(Documented in README; `load_dotenv = true` in `foundry.toml` helps RPC name resolution.)*
+- [x] Run `forge build` and fix any compiler errors.
+- [x] Deploy to Sepolia: either `forge create ... --rpc-url sepolia --account` / `--private-key` per Foundry docs, **or** implement `script/Deploy.s.sol` and run `forge script ... --rpc-url sepolia --broadcast`. *( `script/Deploy.s.sol` + README commands.)*
+- [ ] Copy the deployed contract address into `.env` as `CONTRACT_ADDRESS`. *(Do this after your first on-chain deploy.)*
 
 ## Phase C — Python 2PC layer (same protocol as the lab, no Node)
 
@@ -63,14 +63,16 @@ This document mirrors [Hands On Sepolia.md](./Task/Hands%20On%20Sepolia.md) and 
 
 ## Quick reference commands (Forge)
 
-After `.env` is loaded:
+From `lab-2pc-blockchain/`, after `set -a && source .env && set +a`:
 
 ```bash
 forge build
+forge script script/Deploy.s.sol:DeployScript --rpc-url sepolia --broadcast --private-key "$PRIVATE_KEY" --slow
+# or:
 forge create src/CommitLog.sol:CommitLog --rpc-url sepolia --broadcast --private-key "$PRIVATE_KEY"
 ```
 
-(Exact flags may vary by Foundry version; use `forge create --help` if your CLI uses different option names.)
+(Exact flags may vary by Foundry version; use `forge script --help` if needed.)
 
 ---
 
