@@ -58,23 +58,23 @@ Contract logic, bank balances, ports **5001/5002**, and coordinator 2PC flow are
 - [x] `.env.example` → copy to `.env` with `SEPOLIA_RPC_URL`, empty `CONTRACT_ADDRESS` (no `PRIVATE_KEY` for deploy).
 - [x] `forge build` then `python3 scripts/sync_deploy_artifact.py` → `deploy/artifact.json`.
 - [x] MetaMask deploy UI: `deploy/index.html` + `./deploy/serve.sh` → open **http://127.0.0.1:8787**.
-- [ ] Connect MetaMask, switch to **Sepolia**, deploy **CommitLog**, confirm in wallet popup.
-- [ ] Copy deployed address into `.env` as `CONTRACT_ADDRESS`.
+- [x] Connect MetaMask, switch to **Sepolia**, deploy **CommitLog**, confirm in wallet popup.
+- [x] Copy deployed address into `.env` as `CONTRACT_ADDRESS`.
 - [x] `script/Deploy.s.sol` kept for Anvil/CI only (not Sepolia + private key).
 
 ## Phase C — Python 2PC layer (same protocol as v2 §6–8, no Node)
 
-- [ ] Venv: `python -m venv .venv && source .venv/bin/activate`.
-- [ ] `pip install web3 python-dotenv` (optional `requirements.txt`).
-- [ ] `bank_a.py` / `bank_b.py`: TCP **5001** / **5002**; JSON `PREPARE` / `COMMIT` / `ABORT`; balances **100** / **20**; Bank A votes NO if `balance < amount`.
-- [ ] `coordinator.py`: 2PC loop then `recordDecision` on Sepolia; **`COMMIT` → 1**, **`ABORT` → 2**; log **`transactionId`** (`tx-…`) and tx hash (v2 §9: do not lose the `tx-` id).
-- [ ] ABI from `out/CommitLog.sol/CommitLog.json` or minimal ABI fragment.
+- [x] `uv sync` in `lab-2pc-blockchain/` (`pyproject.toml`: `web3`, `python-dotenv`).
+- [x] `bank_a.py` / `bank_b.py`: TCP **5001** / **5002**; JSON `PREPARE` / `COMMIT` / `ABORT`; balances **100** / **20**; Bank A votes NO if `balance < amount`.
+- [x] `coordinator.py`: 2PC loop then `recordDecision` on Sepolia; **`COMMIT` → 1**, **`ABORT` → 2**; logs **`transactionId`** and tx hash.
+- [x] ABI from `out/CommitLog.sol/CommitLog.json`.
+- [ ] `.env`: `SEPOLIA_RPC_URL`, `CONTRACT_ADDRESS`, `PRIVATE_KEY` (coordinator signer; deploy stays MetaMask).
 
 ## Phase D — Run, verify on-chain, ABORT test
 
-- [ ] Terminal 1: `python bank_a.py`
-- [ ] Terminal 2: `python bank_b.py`
-- [ ] Terminal 3: `python coordinator.py`
+- [ ] Terminal 1: `uv run python bank_a.py`
+- [ ] Terminal 2: `uv run python bank_b.py`
+- [ ] Terminal 3: `uv run python coordinator.py`
 - [ ] Logs: YES/YES → COMMIT; Sepolia tx hash printed.
 - [ ] **Read decision with `cast`** (v2 §10), after `source .env`, using the real `tx-…` from the coordinator:
 

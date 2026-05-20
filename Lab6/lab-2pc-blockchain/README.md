@@ -6,7 +6,7 @@ Foundry project for **CommitLog** on Sepolia. Contract deployment is done in the
 
 - [Foundry](https://book.getfoundry.sh/getting-started/installation) (`forge`, `cast`)
 - [MetaMask](https://metamask.io/) with **Sepolia** network and test ETH
-- Python 3 (artifact sync + later 2PC coordinator)
+- [uv](https://docs.astral.sh/uv/) + Python 3.10+ (2PC coordinator and banks)
 
 ### Build
 
@@ -39,6 +39,26 @@ cp .env.example .env
 ```
 
 `SEPOLIA_RPC_URL` is still needed for `cast` and the Python coordinator; it is not used by the deploy page (MetaMask uses its own RPC).
+
+### Phase C — 2PC (Python + uv)
+
+```shell
+uv sync
+```
+
+Set in `.env`: `SEPOLIA_RPC_URL`, `CONTRACT_ADDRESS`, and `PRIVATE_KEY` (Sepolia test wallet used only by `coordinator.py` to call `recordDecision`).
+
+Run in **three terminals** from `lab-2pc-blockchain/`:
+
+```shell
+uv run python bank_a.py
+uv run python bank_b.py
+uv run python coordinator.py
+```
+
+Expected: both banks vote YES, COMMIT, then a Sepolia tx hash. Note the printed `transactionId` (`tx-…`) for `cast` checks.
+
+**ABORT test:** set `AMOUNT = 150` at the top of `coordinator.py` and run again.
 
 ### Verify on Sepolia (`cast`)
 
