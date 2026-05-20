@@ -1,0 +1,6 @@
+[project]
+name = "lab4-election-clocks"
+version = "0.1.0"
+description = "Bully leader election (TCP) and Berkeley clock sync simulation"
+requires-python = ">=3.10"
+dependencies = []
