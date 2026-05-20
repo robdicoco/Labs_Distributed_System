@@ -1,63 +1,104 @@
 # Action Plan: Lab 2PC + Sepolia (Foundry / Forge)
 
-This document mirrors [Hands On Sepolia.md](./Task/Hands%20On%20Sepolia.md) and maps each step to **Foundry (`forge`)** instead of **Hardhat + npm**. The 2PC **coordinator and bank processes** are implemented with **Python** (stdlib `socket` + **`web3.py`**), not JavaScript. Forge only replaces contract compile/deploy.
+This document mirrors **[Hands On Sepolia v2.md](./Task/Hands%20On%20Sepolia%20v2.md)** (canonical lab). The older [Hands On Sepolia.md](./Task/Hands%20On%20Sepolia.md) used **Hardhat**; v2 is **Foundry-only** for contracts and adds **`cast`** read-back on Sepolia.
 
-**Why Python instead of Node:** The lab’s banks and coordinator are plain TCP + JSON-RPC. Any language with sockets and an Ethereum client works. Common choices: **Python** (`web3.py`), **Rust** (`ethers-rs` / `alloy`), **Go** (`go-ethereum`). This plan uses **Python** to avoid `node`/npm in the 2PC layer.
+The 2PC **coordinator and bank processes** are implemented with **Python** (stdlib `socket` + **`web3.py`**), not the JavaScript in the lab handout. Forge + `cast` match v2; only the TCP/JSON-RPC layer differs from `bankA.js` / `coordinator.js`.
+
+**Why Python instead of Node:** The lab’s banks and coordinator are plain TCP + JSON-RPC. Any language with sockets and an Ethereum client works. This plan uses **Python** to avoid `node`/npm in the 2PC layer.
 
 **Repository status:** Phase A + B scaffolding is in `lab-2pc-blockchain/` (contract, deploy script, `.env.example`, `load_dotenv`). You still need a **real Sepolia deploy** and **`CONTRACT_ADDRESS` in `.env`** before Phase C–D.
 
----
-
-## Review: Hardhat → Forge equivalence
-
-| Lab section (Hardhat) | Forge equivalent |
-|------------------------|------------------|
-| `mkdir` + `npm init` + `npx hardhat init` | `mkdir lab-2pc-blockchain && cd lab-2pc-blockchain && forge init --no-git` (add `--force` if directory non-empty) |
-| `contracts/CommitLog.sol` | `src/CommitLog.sol` (Foundry default layout) |
-| `hardhat.config.js` (Solidity 0.8.24, Sepolia) | `foundry.toml`: `solc = "0.8.24"` and `[rpc_endpoints] sepolia = "${SEPOLIA_RPC_URL}"` |
-| `npx hardhat compile` | `forge build` |
-| `scripts/deploy.js` + `hardhat run --network sepolia` | `forge create src/CommitLog.sol:CommitLog --rpc-url sepolia --broadcast` **or** a `forge script` under `script/Deploy.s.sol` with `vm.startBroadcast()` |
-| `package.json` + `ethers` for coordinator | **Python:** `pip install web3 python-dotenv` (venv recommended). Use `Web3(Web3.HTTPProvider(...))` and `w3.eth.contract(address=..., abi=...)` to call `recordDecision` / `getDecision`. |
-| ABI for `ethers.Contract` | After `forge build`: `out/CommitLog.sol/CommitLog.json` → `json.load` the file and pass `artifact["abi"]` into `w3.eth.contract`. |
-
-**Environment variables:** Keep the same `.env` idea (`SEPOLIA_RPC_URL`, `PRIVATE_KEY`, `CONTRACT_ADDRESS`). Forge resolves `${VAR}` in `foundry.toml` for RPC endpoints when you pass `--rpc-url sepolia` if `sepolia` is defined there, or use `forge ... --rpc-url "$SEPOLIA_RPC_URL"` directly.
-
-**Coordinator ABI / enum values:** On-chain, `Decision` is `UNKNOWN=0`, `COMMIT=1`, `ABORT=2` (same as the JS lab). Either use the full ABI from `out/.../CommitLog.json` or a minimal ABI fragment; `web3.py` encodes `recordDecision(transactionId, decision)` the same way as ethers.
+> **Folder name:** v2 names the project `lab-2pc-foundry/`; this repo uses **`lab-2pc-blockchain/`** (same layout: `src/`, `script/`, `foundry.toml`).
 
 ---
 
-## Phase A — Foundry project and contract
+## What changed from v1 → v2 (lab handout)
 
-- [x] Create project directory (e.g. `lab-2pc-blockchain`) and `cd` into it.
-- [x] Run `forge init` (use `--no-git` if you manage git at a parent repo).
-- [x] Remove default `src/Counter.sol` (and related tests/scripts) if you want a minimal tree, or leave and add `CommitLog` alongside—your choice.
-- [x] Add `src/CommitLog.sol` with the **same** contract code as in Hands On Sepolia (pragma `^0.8.24`, enum `Decision`, `recordDecision`, `getDecision`, events).
-- [x] Add `foundry.toml`: set `solc` / `solc_version` to **0.8.24** (match lab).
-- [x] Configure Sepolia RPC in `foundry.toml` under `[rpc_endpoints]` as `sepolia = "${SEPOLIA_RPC_URL}"` (or rely on shell env only).
+| Topic | v1 (`Hands On Sepolia.md`) | v2 (`Hands On Sepolia v2.md`) |
+|--------|---------------------------|-------------------------------|
+| Toolchain | Hardhat (`hardhat.config.js`, `scripts/deploy.js`) | Foundry (`foundry.toml`, `forge build`, `forge script`) |
+| Contract path | `contracts/CommitLog.sol` | `src/CommitLog.sol` |
+| Deploy | `npx hardhat run scripts/deploy.js --network sepolia` | `forge script script/DeployCommitLog.s.sol:DeployCommitLog ... --broadcast` |
+| Project bootstrap | `npm` + `npx hardhat init` | `foundryup`, `forge init`, `npm` only for `ethers`/`dotenv` if using JS |
+| On-chain reads | Not in handout | `cast call` for `getDecision` and `records` |
+| `.env` private key hint | `SEM_0x` (without `0x`) | `COM_0x` (with `0x`) |
+| Extra concepts | — | Enum `0/1/2`, 2PC vs blockchain roles, note to save `tx-…` id |
+
+Contract logic, bank balances, ports **5001/5002**, and coordinator 2PC flow are **unchanged** between v1 and v2.
+
+---
+
+## Review: Lab v2 → this repository
+
+| Lab v2 step | This repo |
+|-------------|-----------|
+| Install Foundry (`curl … \| bash`, `foundryup`) | Prerequisite on your machine (not in repo) |
+| `mkdir lab-2pc-foundry && forge init` | `lab-2pc-blockchain/` already initialized with `forge init` |
+| `src/CommitLog.sol` | `lab-2pc-blockchain/src/CommitLog.sol` |
+| `foundry.toml` (`solc_version`, `[rpc_endpoints] sepolia`) | `lab-2pc-blockchain/foundry.toml` (+ `load_dotenv = true`) |
+| `script/DeployCommitLog.s.sol:DeployCommitLog` | `script/Deploy.s.sol:DeployScript` (equivalent deploy) |
+| `forge build` | Same |
+| `source .env` + `forge script … --rpc-url $SEPOLIA_RPC_URL --private-key $PRIVATE_KEY --broadcast` | Same flags; can also use `--rpc-url sepolia` when RPC alias is loaded from `.env` |
+| `bankA.js` / `bankB.js` / `coordinator.js` | **`bank_a.py` / `bank_b.py` / `coordinator.py`** (planned) |
+| `cast call` … `getDecision` / `records` | Same commands from shell after coordinator run |
+
+**Coordinator ABI / enum values:** On-chain, `Decision` is `UNKNOWN=0`, `COMMIT=1`, `ABORT=2`. `web3.py` encodes `recordDecision(transactionId, decision)` the same way as ethers in the handout.
+
+---
+
+## Phase A — Foundry toolchain and contract
+
+- [ ] Install Foundry if needed: `curl -L https://foundry.paradigm.xyz | bash` then `foundryup` (per v2 §1).
+- [x] Project directory `lab-2pc-blockchain/` exists with `forge init` layout.
+- [x] Add `src/CommitLog.sol` (same contract as v2: pragma `^0.8.24`, enum `Decision`, `recordDecision`, `getDecision`, events).
+- [x] `foundry.toml`: `solc_version = "0.8.24"`, `[rpc_endpoints] sepolia = "${SEPOLIA_RPC_URL}"`.
+- [ ] Optional (v2 §4): add `optimizer = true` and `optimizer_runs = 200` under `[profile.default]` if you want to match the handout exactly.
 
 ## Phase B — Secrets and deploy
 
-- [x] Create `.env` with `SEPOLIA_RPC_URL`, `PRIVATE_KEY` (no `0x` prefix is common for Foundry; if yours has `0x`, be consistent with tooling), and empty `CONTRACT_ADDRESS` until deployed. *(Use `.env.example` → copy to `.env`; `.env` stays gitignored.)*
-- [x] Load env in shell (`set -a && source .env && set +a`) or use a wrapper before `forge` commands. *(Documented in README; `load_dotenv = true` in `foundry.toml` helps RPC name resolution.)*
-- [x] Run `forge build` and fix any compiler errors.
-- [x] Deploy to Sepolia: either `forge create ... --rpc-url sepolia --account` / `--private-key` per Foundry docs, **or** implement `script/Deploy.s.sol` and run `forge script ... --rpc-url sepolia --broadcast`. *( `script/Deploy.s.sol` + README commands.)*
-- [ ] Copy the deployed contract address into `.env` as `CONTRACT_ADDRESS`. *(Do this after your first on-chain deploy.)*
+- [x] `.env.example` → copy to `.env` with `SEPOLIA_RPC_URL`, `PRIVATE_KEY`, empty `CONTRACT_ADDRESS`.
+- [x] Load env: `set -a && source .env && set +a` (v2 uses `source .env` before deploy).
+- [x] `forge build`.
+- [x] Deploy script present: `script/Deploy.s.sol:DeployScript`.
+- [ ] Deploy to Sepolia and set `CONTRACT_ADDRESS` in `.env` (after first on-chain deploy).
 
-## Phase C — Python 2PC layer (same protocol as the lab, no Node)
+## Phase C — Python 2PC layer (same protocol as v2 §6–8, no Node)
 
-- [ ] Create a venv (recommended): `python -m venv .venv && source .venv/bin/activate`.
-- [ ] Install deps: `pip install web3 python-dotenv` (pin versions in `requirements.txt` if you like).
-- [ ] Add `bank_a.py`, `bank_b.py`: `socketserver` or `socket` listening on **5001** / **5002**; on receive, `json.loads`, handle `PREPARE` / `COMMIT` / `ABORT` like the JS lab (balances 100 and 20, amount check on A).
-- [ ] Add `coordinator.py`: `dotenv` → `.env`; `send_message` using `socket.create_connection((host, port))` + JSON `str`/`bytes`; after 2PC, build/send `recordDecision` via **web3.py** (`build_transaction` → `sign_transaction` → `send_raw_transaction` → `wait_for_transaction_receipt`). Use **`COMMIT` → 1**, **`ABORT` → 2** for the uint8 argument.
-- [ ] Load ABI from `out/CommitLog.sol/CommitLog.json` (`json.load` → `artifact["abi"]`) relative to your Forge project, or duplicate a minimal ABI list in Python.
+- [ ] Venv: `python -m venv .venv && source .venv/bin/activate`.
+- [ ] `pip install web3 python-dotenv` (optional `requirements.txt`).
+- [ ] `bank_a.py` / `bank_b.py`: TCP **5001** / **5002**; JSON `PREPARE` / `COMMIT` / `ABORT`; balances **100** / **20**; Bank A votes NO if `balance < amount`.
+- [ ] `coordinator.py`: 2PC loop then `recordDecision` on Sepolia; **`COMMIT` → 1**, **`ABORT` → 2**; log **`transactionId`** (`tx-…`) and tx hash (v2 §9: do not lose the `tx-` id).
+- [ ] ABI from `out/CommitLog.sol/CommitLog.json` or minimal ABI fragment.
 
-## Phase D — Run and verify
+## Phase D — Run, verify on-chain, ABORT test
 
-- [ ] Terminal 1: `python bank_a.py` (from venv if used).
+- [ ] Terminal 1: `python bank_a.py`
 - [ ] Terminal 2: `python bank_b.py`
 - [ ] Terminal 3: `python coordinator.py`
-- [ ] Confirm logs: YES/YES → COMMIT and transaction hash on Sepolia.
-- [ ] Run **ABORT test**: set `amount = 150` in `coordinator.py`, rerun; expect NO from Bank A, ABORT, and on-chain record still written with ABORT enum value.
+- [ ] Logs: YES/YES → COMMIT; Sepolia tx hash printed.
+- [ ] **Read decision with `cast`** (v2 §10), after `source .env`, using the real `tx-…` from the coordinator:
+
+```bash
+cast call "$CONTRACT_ADDRESS" \
+  "getDecision(string)(uint8)" \
+  "tx-REPLACE_ME" \
+  --rpc-url "$SEPOLIA_RPC_URL"
+```
+
+Expected after COMMIT: `1` (`0` = UNKNOWN, `1` = COMMIT, `2` = ABORT).
+
+- [ ] **Read full record with `cast`** (v2 §11):
+
+```bash
+cast call "$CONTRACT_ADDRESS" \
+  "records(string)(string,uint8,uint256,address)" \
+  "tx-REPLACE_ME" \
+  --rpc-url "$SEPOLIA_RPC_URL"
+```
+
+Optional UTC timestamp: `date -d @<unix_timestamp_from_record>`.
+
+- [ ] **ABORT test** (v2 §10): set `amount = 150` in `coordinator.py`; expect Bank A **NO**, decision **ABORT**, on-chain `getDecision` returns **`2`**, balances unchanged.
 
 ---
 
@@ -67,18 +108,25 @@ From `lab-2pc-blockchain/`, after `set -a && source .env && set +a`:
 
 ```bash
 forge build
-forge script script/Deploy.s.sol:DeployScript --rpc-url sepolia --broadcast --private-key "$PRIVATE_KEY" --slow
-# or:
-forge create src/CommitLog.sol:CommitLog --rpc-url sepolia --broadcast --private-key "$PRIVATE_KEY"
-```
 
-(Exact flags may vary by Foundry version; use `forge script --help` if needed.)
+# Preferred in v2 (explicit RPC/key); works with this repo’s script name:
+forge script script/Deploy.s.sol:DeployScript \
+  --rpc-url "$SEPOLIA_RPC_URL" \
+  --private-key "$PRIVATE_KEY" \
+  --broadcast
+
+# Alternative (RPC alias from foundry.toml):
+forge script script/Deploy.s.sol:DeployScript --rpc-url sepolia --broadcast --private-key "$PRIVATE_KEY" --slow
+
+# Alternative deploy (v2 mentions forge create):
+forge create src/CommitLog.sol:CommitLog --rpc-url "$SEPOLIA_RPC_URL" --broadcast --private-key "$PRIVATE_KEY"
+```
 
 ---
 
 ## Legend
 
-- `[x]` — done (mark yourself when completed).
+- `[x]` — done.
 - `[ ]` — not done.
 
 When you finish a row, change `[ ]` to `[x]` in this file.
