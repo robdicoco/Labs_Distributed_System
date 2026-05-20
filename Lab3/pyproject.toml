@@ -1,0 +1,8 @@
+[project]
+name = "lab3-tcp-udp-quic"
+version = "0.1.0"
+description = "TCP vs UDP vs QUIC latency comparison"
+requires-python = ">=3.10"
+dependencies = [
+    "aioquic>=1.2.0",
+]

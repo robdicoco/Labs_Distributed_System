@@ -1,0 +1,12 @@
+.venv/
+
+# TLS material for QUIC (generate locally: uv run python scripts/generate_certs.py)
+certs/*
+!certs/.gitkeep
+*.pem
+*.key
+*.crt
+
+# Cache
+__pycache__/
+*.py[cod]
