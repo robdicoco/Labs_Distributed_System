@@ -8,6 +8,7 @@ import mimetypes
 import os
 import signal
 import sys
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
@@ -23,6 +24,7 @@ HOST = "127.0.0.1"
 PORT = 8788
 
 _server: ThreadingHTTPServer | None = None
+_shutdown_thread: threading.Thread | None = None
 
 
 def load_env_config() -> dict:
@@ -124,12 +126,24 @@ class CoordinatorHandler(BaseHTTPRequestHandler):
             self._send_error_json(500, str(exc))
 
 
-def _shutdown(*_args: object) -> None:
+def _stop_server() -> None:
+    """shutdown() must run outside the serve_forever() thread."""
     global _server
-    if _server:
-        print("\n[Coordenador] A encerrar…")
-        _server.shutdown()
-    sys.exit(0)
+    if _server is None:
+        return
+    srv = _server
+    _server = None
+    srv.shutdown()
+    srv.server_close()
+
+
+def _request_shutdown(*_args: object) -> None:
+    global _shutdown_thread
+    if _shutdown_thread is not None and _shutdown_thread.is_alive():
+        return
+    print("\n[Coordenador] A encerrar…", flush=True)
+    _shutdown_thread = threading.Thread(target=_stop_server, daemon=True)
+    _shutdown_thread.start()
 
 
 def main() -> None:
@@ -139,16 +153,24 @@ def main() -> None:
         print("Missing coordinator/ web directory", file=sys.stderr)
         sys.exit(1)
 
-    signal.signal(signal.SIGINT, _shutdown)
-    signal.signal(signal.SIGTERM, _shutdown)
+    signal.signal(signal.SIGINT, _request_shutdown)
+    signal.signal(signal.SIGTERM, _request_shutdown)
 
     _server = ThreadingHTTPServer((HOST, PORT), CoordinatorHandler)
+    _server.daemon_threads = True
+
     print(f"[Coordenador] Abra http://{HOST}:{PORT}")
     print("[Coordenador] Ligue bank_a.py e bank_b.py antes de correr o 2PC.")
     try:
-        _server.serve_forever()
+        _server.serve_forever(poll_interval=0.5)
     except KeyboardInterrupt:
-        _shutdown()
+        _request_shutdown()
+    finally:
+        if _shutdown_thread is not None:
+            _shutdown_thread.join(timeout=3)
+        elif _server is not None:
+            _stop_server()
+        print(f"[Coordenador] Porta {PORT} libertada.")
 
 
 if __name__ == "__main__":
