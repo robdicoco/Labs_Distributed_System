@@ -74,7 +74,15 @@ cast call "$CONTRACT_ADDRESS" \
   "getDecision(string)(uint8)" \
   "tx-your-id" \
   --rpc-url "$SEPOLIA_RPC_URL"
+
+# Full record: decision (1=COMMIT, 2=ABORT), timestamp, coordinator, amount
+cast call "$CONTRACT_ADDRESS" \
+  "records(string)(uint8,uint256,address,uint256)" \
+  "tx-your-id" \
+  --rpc-url "$SEPOLIA_RPC_URL"
 ```
+
+After changing the contract, redeploy via `deploy/index.html` and update `CONTRACT_ADDRESS` in `.env`.
 
 ### Local / CI only (`forge script`)
 

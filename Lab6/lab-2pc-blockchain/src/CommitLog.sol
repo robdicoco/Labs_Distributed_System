@@ -9,22 +9,27 @@ contract CommitLog {
     }
 
     struct TransactionRecord {
-        string transactionId;
         Decision decision;
         uint256 timestamp;
         address coordinator;
+        uint256 amount;
     }
 
     mapping(string => TransactionRecord) public records;
 
     event DecisionRecorded(
-        string transactionId,
+        string indexed transactionId,
         Decision decision,
         uint256 timestamp,
-        address coordinator
+        address coordinator,
+        uint256 amount
     );
 
-    function recordDecision(string memory transactionId, Decision decision) public {
+    function recordDecision(
+        string memory transactionId,
+        Decision decision,
+        uint256 amount
+    ) public {
         require(
             records[transactionId].decision == Decision.UNKNOWN,
             "Decision already recorded"
@@ -35,14 +40,18 @@ contract CommitLog {
             "Invalid decision"
         );
 
+        require(amount > 0, "Invalid amount");
+
         records[transactionId] = TransactionRecord({
-            transactionId: transactionId,
             decision: decision,
             timestamp: block.timestamp,
-            coordinator: msg.sender
+            coordinator: msg.sender,
+            amount: amount
         });
 
-        emit DecisionRecorded(transactionId, decision, block.timestamp, msg.sender);
+        emit DecisionRecorded(
+            transactionId, decision, block.timestamp, msg.sender, amount
+        );
     }
 
     function getDecision(string memory transactionId) public view returns (Decision) {

@@ -91,10 +91,12 @@ Expected after COMMIT: `1` (`0` = UNKNOWN, `1` = COMMIT, `2` = ABORT).
 
 ```bash
 cast call "$CONTRACT_ADDRESS" \
-  "records(string)(string,uint8,uint256,address)" \
+  "records(string)(uint8,uint256,address,uint256)" \
   "tx-REPLACE_ME" \
   --rpc-url "$SEPOLIA_RPC_URL"
 ```
+
+Returns: **decision** (`1` = COMMIT, `2` = ABORT), **timestamp**, **coordinator**, **amount**.
 
 Optional UTC timestamp: `date -d @<unix_timestamp_from_record>`.
 

@@ -227,7 +227,8 @@
 
           const tx = await contract.recordDecision(
             last2pc.transactionId,
-            last2pc.blockchainDecision
+            last2pc.blockchainDecision,
+            last2pc.amount
           );
           appendLog("[Coordenador] Registrando decisão na Sepolia…");
           const receipt = await tx.wait();
