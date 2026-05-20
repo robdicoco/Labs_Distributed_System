@@ -12,6 +12,9 @@ out/
 .env.*
 !.env.example
 
+# Generated from `forge build` + scripts/sync_deploy_artifact.py
+deploy/artifact.json
+
 # Python (Phase C coordinator / banks, if kept in this tree)
 .venv/
 venv/

@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Deploy CommitLog — MetaMask</title>
+    <style>
+      :root {
+        font-family: system-ui, sans-serif;
+        color-scheme: light dark;
+      }
+      body {
+        max-width: 42rem;
+        margin: 2rem auto;
+        padding: 0 1rem;
+        line-height: 1.5;
+      }
+      h1 {
+        font-size: 1.25rem;
+      }
+      button {
+        margin: 0.25rem 0.5rem 0.25rem 0;
+        padding: 0.5rem 1rem;
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      #status,
+      #result {
+        margin-top: 1rem;
+        padding: 0.75rem 1rem;
+        border-radius: 6px;
+        background: color-mix(in srgb, Canvas 92%, CanvasText 8%);
+      }
+      #contractAddress {
+        word-break: break-all;
+        font-family: ui-monospace, monospace;
+        font-size: 0.9rem;
+      }
+      .hint {
+        color: color-mix(in srgb, CanvasText 65%, transparent);
+        font-size: 0.9rem;
+      }
+      .error {
+        color: #c62828;
+      }
+      .ok {
+        color: #2e7d32;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Deploy <code>CommitLog</code> to Sepolia</h1>
+    <p class="hint">
+      Sign the deployment in MetaMask. Use Sepolia test ETH only. After deploy, copy the
+      contract address into <code>.env</code> as <code>CONTRACT_ADDRESS</code>.
+    </p>
+
+    <p>
+      <button id="connectBtn" type="button">Connect MetaMask</button>
+      <button id="deployBtn" type="button" disabled>Deploy CommitLog</button>
+    </p>
+
+    <div id="status">Loading contract artifact…</div>
+    <div id="result" hidden>
+      <strong>Contract address</strong>
+      <p id="contractAddress"></p>
+      <p class="hint">
+        Add to <code>.env</code>:<br />
+        <code>CONTRACT_ADDRESS=&lt;address above&gt;</code>
+      </p>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.5/dist/ethers.umd.min.js"></script>
+    <script>
+      const SEPOLIA_CHAIN_ID = 11155111n;
+      const SEPOLIA_HEX = "0xaa36a7";
+
+      const statusEl = document.getElementById("status");
+      const resultEl = document.getElementById("result");
+      const contractAddressEl = document.getElementById("contractAddress");
+      const connectBtn = document.getElementById("connectBtn");
+      const deployBtn = document.getElementById("deployBtn");
+
+      let artifact = null;
+      let provider = null;
+      let signer = null;
+
+      function setStatus(message, isError = false) {
+        statusEl.textContent = message;
+        statusEl.className = isError ? "error" : "";
+      }
+
+      async function loadArtifact() {
+        const res = await fetch("./artifact.json");
+        if (!res.ok) {
+          throw new Error(
+            "artifact.json not found. Run: forge build && python3 scripts/sync_deploy_artifact.py"
+          );
+        }
+        artifact = await res.json();
+        if (!artifact.bytecode || !artifact.abi?.length) {
+          throw new Error("artifact.json is incomplete");
+        }
+        setStatus("Artifact loaded. Connect MetaMask to continue.");
+        connectBtn.disabled = false;
+      }
+
+      async function ensureSepolia() {
+        try {
+          const chainId = await provider.send("eth_chainId", []);
+          if (BigInt(chainId) === SEPOLIA_CHAIN_ID) return;
+        } catch (_) {
+          /* fall through to wallet_switchEthereumChain */
+        }
+        try {
+          await provider.send("wallet_switchEthereumChain", [{ chainId: SEPOLIA_HEX }]);
+        } catch (err) {
+          if (err?.code === 4902) {
+            await provider.send("wallet_addEthereumChain", [
+              {
+                chainId: SEPOLIA_HEX,
+                chainName: "Sepolia",
+                nativeCurrency: { name: "Sepolia ETH", symbol: "ETH", decimals: 18 },
+                rpcUrls: ["https://rpc.sepolia.org"],
+                blockExplorerUrls: ["https://sepolia.etherscan.io"],
+              },
+            ]);
+            return;
+          }
+          throw err;
+        }
+      }
+
+      connectBtn.addEventListener("click", async () => {
+        try {
+          if (!window.ethereum) {
+            setStatus("MetaMask not detected. Install the extension and refresh.", true);
+            return;
+          }
+          provider = new ethers.BrowserProvider(window.ethereum);
+          await provider.send("eth_requestAccounts", []);
+          await ensureSepolia();
+          signer = await provider.getSigner();
+          const address = await signer.getAddress();
+          const network = await provider.getNetwork();
+          setStatus(`Connected: ${address} on ${network.name} (chain ${network.chainId})`);
+          deployBtn.disabled = false;
+          connectBtn.textContent = "Connected";
+          connectBtn.disabled = true;
+        } catch (err) {
+          console.error(err);
+          setStatus(err.message || String(err), true);
+        }
+      });
+
+      deployBtn.addEventListener("click", async () => {
+        try {
+          deployBtn.disabled = true;
+          setStatus("Confirm the deployment transaction in MetaMask…");
+
+          const factory = new ethers.ContractFactory(
+            artifact.abi,
+            artifact.bytecode,
+            signer
+          );
+          const contract = await factory.deploy();
+          setStatus("Transaction sent. Waiting for confirmation…");
+          await contract.waitForDeployment();
+          const address = await contract.getAddress();
+
+          contractAddressEl.textContent = address;
+          resultEl.hidden = false;
+          setStatus("Deploy confirmed.", false);
+          statusEl.classList.add("ok");
+        } catch (err) {
+          console.error(err);
+          setStatus(err.shortMessage || err.message || String(err), true);
+          deployBtn.disabled = false;
+        }
+      });
+
+      loadArtifact().catch((err) => {
+        console.error(err);
+        setStatus(err.message, true);
+      });
+    </script>
+  </body>
+</html>

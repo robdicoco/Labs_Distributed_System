@@ -36,9 +36,8 @@ Contract logic, bank balances, ports **5001/5002**, and coordinator 2PC flow are
 | `mkdir lab-2pc-foundry && forge init` | `lab-2pc-blockchain/` already initialized with `forge init` |
 | `src/CommitLog.sol` | `lab-2pc-blockchain/src/CommitLog.sol` |
 | `foundry.toml` (`solc_version`, `[rpc_endpoints] sepolia`) | `lab-2pc-blockchain/foundry.toml` (+ `load_dotenv = true`) |
-| `script/DeployCommitLog.s.sol:DeployCommitLog` | `script/Deploy.s.sol:DeployScript` (equivalent deploy) |
-| `forge build` | Same |
-| `source .env` + `forge script … --rpc-url $SEPOLIA_RPC_URL --private-key $PRIVATE_KEY --broadcast` | Same flags; can also use `--rpc-url sepolia` when RPC alias is loaded from `.env` |
+| `forge script` + `--private-key` (v2 handout) | **`deploy/index.html` + MetaMask** (this repo; no key in CLI) |
+| `forge build` | Same + `python3 scripts/sync_deploy_artifact.py` |
 | `bankA.js` / `bankB.js` / `coordinator.js` | **`bank_a.py` / `bank_b.py` / `coordinator.py`** (planned) |
 | `cast call` … `getDecision` / `records` | Same commands from shell after coordinator run |
 
@@ -48,19 +47,20 @@ Contract logic, bank balances, ports **5001/5002**, and coordinator 2PC flow are
 
 ## Phase A — Foundry toolchain and contract
 
-- [ ] Install Foundry if needed: `curl -L https://foundry.paradigm.xyz | bash` then `foundryup` (per v2 §1).
+- [x] Install Foundry if needed: `curl -L https://foundry.paradigm.xyz | bash` then `foundryup` (per v2 §1).
 - [x] Project directory `lab-2pc-blockchain/` exists with `forge init` layout.
 - [x] Add `src/CommitLog.sol` (same contract as v2: pragma `^0.8.24`, enum `Decision`, `recordDecision`, `getDecision`, events).
 - [x] `foundry.toml`: `solc_version = "0.8.24"`, `[rpc_endpoints] sepolia = "${SEPOLIA_RPC_URL}"`.
-- [ ] Optional (v2 §4): add `optimizer = true` and `optimizer_runs = 200` under `[profile.default]` if you want to match the handout exactly.
+- [x] Optional (v2 §4): add `optimizer = true` and `optimizer_runs = 200` under `[profile.default]` if you want to match the handout exactly.
 
-## Phase B — Secrets and deploy
+## Phase B — Secrets and deploy (MetaMask)
 
-- [x] `.env.example` → copy to `.env` with `SEPOLIA_RPC_URL`, `PRIVATE_KEY`, empty `CONTRACT_ADDRESS`.
-- [x] Load env: `set -a && source .env && set +a` (v2 uses `source .env` before deploy).
-- [x] `forge build`.
-- [x] Deploy script present: `script/Deploy.s.sol:DeployScript`.
-- [ ] Deploy to Sepolia and set `CONTRACT_ADDRESS` in `.env` (after first on-chain deploy).
+- [x] `.env.example` → copy to `.env` with `SEPOLIA_RPC_URL`, empty `CONTRACT_ADDRESS` (no `PRIVATE_KEY` for deploy).
+- [x] `forge build` then `python3 scripts/sync_deploy_artifact.py` → `deploy/artifact.json`.
+- [x] MetaMask deploy UI: `deploy/index.html` + `./deploy/serve.sh` → open **http://127.0.0.1:8787**.
+- [ ] Connect MetaMask, switch to **Sepolia**, deploy **CommitLog**, confirm in wallet popup.
+- [ ] Copy deployed address into `.env` as `CONTRACT_ADDRESS`.
+- [x] `script/Deploy.s.sol` kept for Anvil/CI only (not Sepolia + private key).
 
 ## Phase C — Python 2PC layer (same protocol as v2 §6–8, no Node)
 
@@ -102,24 +102,24 @@ Optional UTC timestamp: `date -d @<unix_timestamp_from_record>`.
 
 ---
 
-## Quick reference commands (Forge)
+## Quick reference — deploy (MetaMask)
 
-From `lab-2pc-blockchain/`, after `set -a && source .env && set +a`:
+From `lab-2pc-blockchain/`:
 
 ```bash
 forge build
+python3 scripts/sync_deploy_artifact.py
+./deploy/serve.sh 8787
+# Browser → http://127.0.0.1:8787 → Connect → Deploy → copy address to .env
+```
 
-# Preferred in v2 (explicit RPC/key); works with this repo’s script name:
-forge script script/Deploy.s.sol:DeployScript \
-  --rpc-url "$SEPOLIA_RPC_URL" \
-  --private-key "$PRIVATE_KEY" \
-  --broadcast
+## Quick reference — `cast` / coordinator
 
-# Alternative (RPC alias from foundry.toml):
-forge script script/Deploy.s.sol:DeployScript --rpc-url sepolia --broadcast --private-key "$PRIVATE_KEY" --slow
+After `CONTRACT_ADDRESS` is set:
 
-# Alternative deploy (v2 mentions forge create):
-forge create src/CommitLog.sol:CommitLog --rpc-url "$SEPOLIA_RPC_URL" --broadcast --private-key "$PRIVATE_KEY"
+```bash
+set -a && source .env && set +a
+cast call "$CONTRACT_ADDRESS" "getDecision(string)(uint8)" "tx-…" --rpc-url "$SEPOLIA_RPC_URL"
 ```
 
 ---

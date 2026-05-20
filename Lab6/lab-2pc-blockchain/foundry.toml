@@ -5,6 +5,8 @@ libs = ["lib"]
 solc_version = "0.8.24"
 evm_version = "shanghai"
 load_dotenv = true
+optimizer = true
+optimizer_runs = 200
 
 [rpc_endpoints]
 sepolia = "${SEPOLIA_RPC_URL}"

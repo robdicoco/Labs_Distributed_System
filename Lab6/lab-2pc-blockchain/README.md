@@ -1,86 +1,71 @@
-## Foundry
+## Lab 2PC + Sepolia — `lab-2pc-blockchain`
 
-**Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
+Foundry project for **CommitLog** on Sepolia. Contract deployment is done in the browser with **MetaMask** (no private key in shell commands).
 
-Foundry consists of:
+### Prerequisites
 
--   **Forge**: Ethereum testing framework (like Truffle, Hardhat and DappTools).
--   **Cast**: Swiss army knife for interacting with EVM smart contracts, sending transactions and getting chain data.
--   **Anvil**: Local Ethereum node, akin to Ganache, Hardhat Network.
--   **Chisel**: Fast, utilitarian, and verbose solidity REPL.
-
-## Documentation
-
-https://book.getfoundry.sh/
-
-## Usage
+- [Foundry](https://book.getfoundry.sh/getting-started/installation) (`forge`, `cast`)
+- [MetaMask](https://metamask.io/) with **Sepolia** network and test ETH
+- Python 3 (artifact sync + later 2PC coordinator)
 
 ### Build
 
 ```shell
-$ forge build
-```
-
-### Test
-
-```shell
-$ forge test
-```
-
-### Format
-
-```shell
-$ forge fmt
-```
-
-### Gas Snapshots
-
-```shell
-$ forge snapshot
-```
-
-### Anvil
-
-```shell
-$ anvil
-```
-
-### Sepolia: env and deploy
-
-1. Copy `.env.example` to `.env` and set `SEPOLIA_RPC_URL` and `PRIVATE_KEY`. Leave `CONTRACT_ADDRESS` empty until after deploy. With `load_dotenv = true` in `foundry.toml`, Forge loads `.env` when resolving `foundry.toml` placeholders (for example **`--rpc-url sepolia`**). For **`--private-key`**, export variables in your shell first:
-
-```shell
-set -a && source .env && set +a
-```
-
-2. Build and deploy **CommitLog** (Sepolia chain id **11155111**):
-
-```shell
 forge build
-forge script script/Deploy.s.sol:DeployScript --rpc-url sepolia --broadcast --private-key "$PRIVATE_KEY" --slow
+python3 scripts/sync_deploy_artifact.py
 ```
 
-Optional: add `--verify` and set `ETHERSCAN_API_KEY` for contract verification on Etherscan.
+### Deploy with MetaMask
 
-3. Copy the printed **`CommitLog deployed at:`** address into `.env` as `CONTRACT_ADDRESS=` for the Python coordinator (Phase C).
+1. Serve the deploy UI (must be `http://`, not `file://`):
 
-Alternative one-shot deploy:
+```shell
+chmod +x deploy/serve.sh
+./deploy/serve.sh 8787
+```
+
+2. Open **http://127.0.0.1:8787** in a browser where MetaMask is installed.
+
+3. Click **Connect MetaMask** → approve connection → switch/add **Sepolia** if prompted.
+
+4. Click **Deploy CommitLog** → confirm the transaction in MetaMask.
+
+5. Copy the printed contract address into `.env`:
+
+```shell
+cp .env.example .env
+# edit .env:
+# CONTRACT_ADDRESS=0x...
+```
+
+`SEPOLIA_RPC_URL` is still needed for `cast` and the Python coordinator; it is not used by the deploy page (MetaMask uses its own RPC).
+
+### Verify on Sepolia (`cast`)
 
 ```shell
 set -a && source .env && set +a
-forge create src/CommitLog.sol:CommitLog --rpc-url sepolia --broadcast --private-key "$PRIVATE_KEY"
+
+cast call "$CONTRACT_ADDRESS" \
+  "getDecision(string)(uint8)" \
+  "tx-your-id" \
+  --rpc-url "$SEPOLIA_RPC_URL"
 ```
 
-### Cast
+### Local / CI only (`forge script`)
+
+`script/Deploy.s.sol` remains for Anvil or scripted tests. Do **not** use `--private-key` for normal lab deploys.
 
 ```shell
-$ cast <subcommand>
+# Example: local Anvil with unlocked account — not Sepolia + MetaMask
+anvil &
+forge script script/Deploy.s.sol:DeployScript --rpc-url http://127.0.0.1:8545 --broadcast --unlocked
 ```
 
-### Help
+### Other commands
 
 ```shell
-$ forge --help
-$ anvil --help
-$ cast --help
+forge test
+forge fmt
 ```
+
+Documentation: https://book.getfoundry.sh/
