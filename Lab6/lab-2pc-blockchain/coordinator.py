@@ -1,168 +1,154 @@
 #!/usr/bin/env python3
-"""2PC coordinator: PREPARE / COMMIT|ABORT over TCP, then recordDecision on Sepolia."""
+"""Coordinator HTTP server: runs 2PC via API; Sepolia signing in coordinator/index.html + MetaMask."""
 
 from __future__ import annotations
 
 import json
+import mimetypes
 import os
-import socket
+import signal
 import sys
-import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import urlparse
 
 from dotenv import load_dotenv
-from eth_account import Account
-from web3 import Web3
 
-# Change to 150 for the ABORT lab test (Banco A balance is 100).
-AMOUNT = 50
-
-PARTICIPANTS = [
-    {"name": "Banco A", "host": "127.0.0.1", "port": 5001},
-    {"name": "Banco B", "host": "127.0.0.1", "port": 5002},
-]
+from coordinator_core import DEFAULT_AMOUNT, run_2pc
 
 ROOT = Path(__file__).resolve().parent
+WEB_DIR = ROOT / "coordinator"
 ABI_PATH = ROOT / "out" / "CommitLog.sol" / "CommitLog.json"
-SEPOLIA_CHAIN_ID = 11155111
+HOST = "127.0.0.1"
+PORT = 8788
+
+_server: ThreadingHTTPServer | None = None
 
 
-def send_message(participant: dict, message: dict) -> dict:
-    with socket.create_connection(
-        (participant["host"], participant["port"]), timeout=10
-    ) as sock:
-        sock.sendall(json.dumps(message).encode())
-        raw = sock.recv(65536).decode()
-    return json.loads(raw)
+def load_env_config() -> dict:
+    load_dotenv(ROOT / ".env")
+    contract_address = os.getenv("CONTRACT_ADDRESS", "").strip()
+    if not contract_address:
+        raise ValueError("CONTRACT_ADDRESS is not set in .env")
+    return {"contractAddress": contract_address}
 
 
-def load_contract_abi() -> list:
+def load_abi() -> list:
     if not ABI_PATH.is_file():
-        print("Run `forge build` first. Missing:", ABI_PATH, file=sys.stderr)
-        sys.exit(1)
+        raise FileNotFoundError(
+            f"Missing {ABI_PATH}. Run: forge build"
+        )
     artifact = json.loads(ABI_PATH.read_text(encoding="utf-8"))
     return artifact["abi"]
 
 
-def normalize_private_key(key: str) -> str:
-    key = key.strip()
-    return key if key.startswith("0x") else f"0x{key}"
+class CoordinatorHandler(BaseHTTPRequestHandler):
+    server_version = "CoordinatorHTTP/1.0"
+
+    def log_message(self, fmt: str, *args) -> None:
+        print(f"[Coordenador] {self.address_string()} - {fmt % args}")
+
+    def _send_json(self, status: int, payload: dict) -> None:
+        body = json.dumps(payload).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _send_error_json(self, status: int, message: str) -> None:
+        self._send_json(status, {"error": message})
+
+    def do_GET(self) -> None:
+        path = urlparse(self.path).path
+
+        if path == "/api/config":
+            try:
+                self._send_json(200, load_env_config())
+            except (ValueError, FileNotFoundError) as exc:
+                self._send_error_json(500, str(exc))
+            return
+
+        if path == "/api/abi":
+            try:
+                self._send_json(200, {"abi": load_abi()})
+            except FileNotFoundError as exc:
+                self._send_error_json(500, str(exc))
+            return
+
+        if path == "/":
+            path = "/index.html"
+
+        file_path = (WEB_DIR / path.lstrip("/")).resolve()
+        if not str(file_path).startswith(str(WEB_DIR.resolve())) or not file_path.is_file():
+            self.send_error(404)
+            return
+
+        content = file_path.read_bytes()
+        mime, _ = mimetypes.guess_type(str(file_path))
+        self.send_response(200)
+        self.send_header("Content-Type", mime or "application/octet-stream")
+        self.send_header("Content-Length", str(len(content)))
+        self.end_headers()
+        self.wfile.write(content)
+
+    def do_POST(self) -> None:
+        path = urlparse(self.path).path
+
+        if path != "/api/2pc":
+            self.send_error(404)
+            return
+
+        length = int(self.headers.get("Content-Length", 0))
+        raw = self.rfile.read(length).decode() if length else "{}"
+        try:
+            body = json.loads(raw) if raw else {}
+            amount = int(body.get("amount", DEFAULT_AMOUNT))
+        except (json.JSONDecodeError, TypeError, ValueError):
+            self._send_error_json(400, "Invalid JSON body; expected { \"amount\": number }")
+            return
+
+        try:
+            result = run_2pc(amount)
+            print(
+                f"[Coordenador] 2PC {result['transactionId']}: "
+                f"{result['decision']} (amount={amount})"
+            )
+            self._send_json(200, result)
+        except OSError as exc:
+            self._send_error_json(
+                503,
+                f"Cannot reach banks. Start bank_a.py and bank_b.py. ({exc})",
+            )
+        except Exception as exc:
+            self._send_error_json(500, str(exc))
 
 
-def build_web3_contract():
-    load_dotenv(ROOT / ".env")
-
-    rpc_url = os.getenv("SEPOLIA_RPC_URL")
-    contract_address = os.getenv("CONTRACT_ADDRESS")
-    private_key = os.getenv("PRIVATE_KEY")
-
-    missing = [
-        name
-        for name, val in [
-            ("SEPOLIA_RPC_URL", rpc_url),
-            ("CONTRACT_ADDRESS", contract_address),
-            ("PRIVATE_KEY", private_key),
-        ]
-        if not val
-    ]
-    if missing:
-        print(
-            "Set in .env:",
-            ", ".join(missing),
-            file=sys.stderr,
-        )
-        print(
-            "PRIVATE_KEY is the coordinator signer (Sepolia test wallet). "
-            "Deploy uses MetaMask; recording decisions uses this key.",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-
-    w3 = Web3(Web3.HTTPProvider(rpc_url))
-    if not w3.is_connected():
-        print("Cannot connect to SEPOLIA_RPC_URL", file=sys.stderr)
-        sys.exit(1)
-
-    account = Account.from_key(normalize_private_key(private_key))
-    contract = w3.eth.contract(
-        address=Web3.to_checksum_address(contract_address),
-        abi=load_contract_abi(),
-    )
-    return w3, account, contract
-
-
-def record_on_chain(
-    w3: Web3, account: Account, contract, transaction_id: str, decision: str
-) -> str:
-    blockchain_decision = 1 if decision == "COMMIT" else 2
-
-    fn = contract.functions.recordDecision(transaction_id, blockchain_decision)
-    nonce = w3.eth.get_transaction_count(account.address)
-    gas_estimate = fn.estimate_gas({"from": account.address})
-
-    tx = fn.build_transaction(
-        {
-            "from": account.address,
-            "nonce": nonce,
-            "chainId": SEPOLIA_CHAIN_ID,
-            "gas": int(gas_estimate * 1.2),
-        }
-    )
-
-    signed = account.sign_transaction(tx)
-    tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
-    receipt = w3.eth.wait_for_transaction_receipt(tx_hash)
-
-    if receipt["status"] != 1:
-        raise RuntimeError(f"Transaction failed: {tx_hash.hex()}")
-
-    return tx_hash.hex()
-
-
-def run_2pc() -> None:
-    transaction_id = f"tx-{int(time.time() * 1000)}"
-
-    print(f"\nIniciando transação {transaction_id}")
-    print(f"Transferência: Banco A -> Banco B | Valor: {AMOUNT}")
-
-    votes: list[str] = []
-    for participant in PARTICIPANTS:
-        response = send_message(
-            participant,
-            {"type": "PREPARE", "transactionId": transaction_id, "amount": AMOUNT},
-        )
-        vote = response["vote"]
-        print(f"[Coordenador] Voto de {participant['name']}: {vote}")
-        votes.append(vote)
-
-    decision = "COMMIT" if all(v == "YES" for v in votes) else "ABORT"
-    print(f"[Coordenador] Decisão final: {decision}")
-
-    for participant in PARTICIPANTS:
-        send_message(
-            participant,
-            {
-                "type": decision,
-                "transactionId": transaction_id,
-                "amount": AMOUNT,
-            },
-        )
-
-    print("[Coordenador] Registrando decisão na Sepolia...")
-    w3, account, contract = build_web3_contract()
-    tx_hash = record_on_chain(w3, account, contract, transaction_id, decision)
-
-    print("[Coordenador] Decisão registrada na blockchain.")
-    print("Hash da transação:", tx_hash)
-    print("transactionId (use with cast):", transaction_id)
+def _shutdown(*_args: object) -> None:
+    global _server
+    if _server:
+        print("\n[Coordenador] A encerrar…")
+        _server.shutdown()
+    sys.exit(0)
 
 
 def main() -> None:
-    try:
-        run_2pc()
-    except Exception as exc:
-        print(exc, file=sys.stderr)
+    global _server
+
+    if not WEB_DIR.is_dir():
+        print("Missing coordinator/ web directory", file=sys.stderr)
         sys.exit(1)
+
+    signal.signal(signal.SIGINT, _shutdown)
+    signal.signal(signal.SIGTERM, _shutdown)
+
+    _server = ThreadingHTTPServer((HOST, PORT), CoordinatorHandler)
+    print(f"[Coordenador] Abra http://{HOST}:{PORT}")
+    print("[Coordenador] Ligue bank_a.py e bank_b.py antes de correr o 2PC.")
+    try:
+        _server.serve_forever()
+    except KeyboardInterrupt:
+        _shutdown()
 
 
 if __name__ == "__main__":

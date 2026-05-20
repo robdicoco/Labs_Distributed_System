@@ -40,25 +40,30 @@ cp .env.example .env
 
 `SEPOLIA_RPC_URL` is still needed for `cast` and the Python coordinator; it is not used by the deploy page (MetaMask uses its own RPC).
 
-### Phase C — 2PC (Python + uv)
+### Phase C — 2PC (Python banks + MetaMask coordinator)
 
 ```shell
 uv sync
 ```
 
-Set in `.env`: `SEPOLIA_RPC_URL`, `CONTRACT_ADDRESS`, and `PRIVATE_KEY` (Sepolia test wallet used only by `coordinator.py` to call `recordDecision`).
+Set in `.env`: `CONTRACT_ADDRESS` (from deploy). `SEPOLIA_RPC_URL` is only needed for `cast`.
 
-Run in **three terminals** from `lab-2pc-blockchain/`:
+**Terminal 1 & 2** — banks:
 
 ```shell
 uv run python bank_a.py
 uv run python bank_b.py
+```
+
+**Terminal 3** — coordinator UI:
+
+```shell
 uv run python coordinator.py
 ```
 
-Expected: both banks vote YES, COMMIT, then a Sepolia tx hash. Note the printed `transactionId` (`tx-…`) for `cast` checks.
+Open **http://127.0.0.1:8788** → Connect MetaMask (Sepolia) → **Run 2PC** → **Record on Sepolia** and confirm in MetaMask.
 
-**ABORT test:** set `AMOUNT = 150` at the top of `coordinator.py` and run again.
+**ABORT test:** set amount to **150** in the page (Banco A balance is 100).
 
 ### Verify on Sepolia (`cast`)
 

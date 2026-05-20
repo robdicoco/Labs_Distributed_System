@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>2PC Coordinator — MetaMask</title>
+    <style>
+      :root {
+        font-family: system-ui, sans-serif;
+        color-scheme: light dark;
+      }
+      body {
+        max-width: 44rem;
+        margin: 2rem auto;
+        padding: 0 1rem;
+        line-height: 1.5;
+      }
+      h1 {
+        font-size: 1.25rem;
+      }
+      label {
+        display: block;
+        margin: 0.75rem 0 0.25rem;
+      }
+      input[type="number"] {
+        width: 6rem;
+        padding: 0.35rem 0.5rem;
+      }
+      button {
+        margin: 0.25rem 0.5rem 0.25rem 0;
+        padding: 0.5rem 1rem;
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      #status,
+      #result {
+        margin-top: 1rem;
+        padding: 0.75rem 1rem;
+        border-radius: 6px;
+        background: color-mix(in srgb, Canvas 92%, CanvasText 8%);
+      }
+      #log {
+        font-family: ui-monospace, monospace;
+        font-size: 0.85rem;
+        white-space: pre-wrap;
+      }
+      .hint {
+        color: color-mix(in srgb, CanvasText 65%, transparent);
+        font-size: 0.9rem;
+      }
+      .error {
+        color: #c62828;
+      }
+      .ok {
+        color: #2e7d32;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>2PC Coordinator + Sepolia</h1>
+    <p class="hint">
+      Start <code>bank_a.py</code> and <code>bank_b.py</code>, then connect MetaMask on
+      Sepolia. The distributed phase runs locally; you sign <code>recordDecision</code> in
+      MetaMask.
+    </p>
+
+    <p>
+      <button id="connectBtn" type="button">Connect MetaMask</button>
+    </p>
+
+    <label for="amount">Transfer amount (Banco A → Banco B)</label>
+    <input id="amount" type="number" value="50" min="1" />
+
+    <p>
+      <button id="run2pcBtn" type="button" disabled>1. Run 2PC (local)</button>
+      <button id="signBtn" type="button" disabled>2. Record on Sepolia (MetaMask)</button>
+    </p>
+
+    <div id="status">Loading config…</div>
+    <div id="result" hidden>
+      <strong>Result</strong>
+      <pre id="log"></pre>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.5/dist/ethers.umd.min.js"></script>
+    <script>
+      const SEPOLIA_CHAIN_ID = 11155111n;
+      const SEPOLIA_HEX = "0xaa36a7";
+
+      const statusEl = document.getElementById("status");
+      const resultEl = document.getElementById("result");
+      const logEl = document.getElementById("log");
+      const connectBtn = document.getElementById("connectBtn");
+      const run2pcBtn = document.getElementById("run2pcBtn");
+      const signBtn = document.getElementById("signBtn");
+      const amountInput = document.getElementById("amount");
+
+      let config = null;
+      let abi = null;
+      let provider = null;
+      let signer = null;
+      let contract = null;
+      let last2pc = null;
+
+      function setStatus(message, isError = false) {
+        statusEl.textContent = message;
+        statusEl.className = isError ? "error" : "";
+      }
+
+      function appendLog(text) {
+        logEl.textContent += text + "\n";
+        resultEl.hidden = false;
+      }
+
+      async function loadBackend() {
+        const [cfgRes, abiRes] = await Promise.all([
+          fetch("/api/config"),
+          fetch("/api/abi"),
+        ]);
+        if (!cfgRes.ok) {
+          const err = await cfgRes.json();
+          throw new Error(err.error || "Failed to load /api/config");
+        }
+        if (!abiRes.ok) {
+          const err = await abiRes.json();
+          throw new Error(err.error || "Failed to load /api/abi");
+        }
+        config = await cfgRes.json();
+        abi = (await abiRes.json()).abi;
+      }
+
+      async function ensureSepolia() {
+        try {
+          const chainId = await provider.send("eth_chainId", []);
+          if (BigInt(chainId) === SEPOLIA_CHAIN_ID) return;
+        } catch (_) {}
+        try {
+          await provider.send("wallet_switchEthereumChain", [{ chainId: SEPOLIA_HEX }]);
+        } catch (err) {
+          if (err?.code === 4902) {
+            await provider.send("wallet_addEthereumChain", [
+              {
+                chainId: SEPOLIA_HEX,
+                chainName: "Sepolia",
+                nativeCurrency: { name: "Sepolia ETH", symbol: "ETH", decimals: 18 },
+                rpcUrls: ["https://rpc.sepolia.org"],
+                blockExplorerUrls: ["https://sepolia.etherscan.io"],
+              },
+            ]);
+            return;
+          }
+          throw err;
+        }
+      }
+
+      connectBtn.addEventListener("click", async () => {
+        try {
+          if (!window.ethereum) {
+            setStatus("MetaMask not detected.", true);
+            return;
+          }
+          provider = new ethers.BrowserProvider(window.ethereum);
+          await provider.send("eth_requestAccounts", []);
+          await ensureSepolia();
+          signer = await provider.getSigner();
+          const address = await signer.getAddress();
+          contract = new ethers.Contract(config.contractAddress, abi, signer);
+          setStatus(`Connected: ${address} on Sepolia`);
+          connectBtn.textContent = "Connected";
+          connectBtn.disabled = true;
+          run2pcBtn.disabled = false;
+        } catch (err) {
+          console.error(err);
+          setStatus(err.shortMessage || err.message || String(err), true);
+        }
+      });
+
+      run2pcBtn.addEventListener("click", async () => {
+        try {
+          run2pcBtn.disabled = true;
+          signBtn.disabled = true;
+          last2pc = null;
+          logEl.textContent = "";
+          setStatus("Running PREPARE / COMMIT|ABORT against banks…");
+
+          const amount = Number(amountInput.value);
+          const res = await fetch("/api/2pc", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ amount }),
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            throw new Error(data.error || res.statusText);
+          }
+
+          last2pc = data;
+          for (const v of data.votes) {
+            appendLog(`[Coordenador] Voto de ${v.name}: ${v.vote}`);
+          }
+          appendLog(`[Coordenador] Decisão final: ${data.decision}`);
+          appendLog(`transactionId: ${data.transactionId}`);
+          setStatus(
+            `2PC finished: ${data.decision}. Click “Record on Sepolia” and confirm in MetaMask.`,
+            false
+          );
+          signBtn.disabled = false;
+          run2pcBtn.disabled = false;
+        } catch (err) {
+          console.error(err);
+          setStatus(err.message || String(err), true);
+          run2pcBtn.disabled = false;
+        }
+      });
+
+      signBtn.addEventListener("click", async () => {
+        if (!last2pc) {
+          setStatus("Run 2PC first.", true);
+          return;
+        }
+        try {
+          signBtn.disabled = true;
+          setStatus("Confirm recordDecision in MetaMask…");
+
+          const tx = await contract.recordDecision(
+            last2pc.transactionId,
+            last2pc.blockchainDecision
+          );
+          appendLog("[Coordenador] Registrando decisão na Sepolia…");
+          const receipt = await tx.wait();
+
+          appendLog("[Coordenador] Decisão registrada na blockchain.");
+          appendLog("Hash da transação: " + receipt.hash);
+          setStatus("On-chain record confirmed.", false);
+          statusEl.classList.add("ok");
+          signBtn.disabled = true;
+        } catch (err) {
+          console.error(err);
+          setStatus(err.shortMessage || err.message || String(err), true);
+          signBtn.disabled = false;
+        }
+      });
+
+      loadBackend()
+        .then(() => {
+          setStatus(
+            `Contract ${config.contractAddress.slice(0, 10)}… — connect MetaMask to continue.`
+          );
+        })
+        .catch((err) => {
+          console.error(err);
+          setStatus(err.message, true);
+        });
+    </script>
+  </body>
+</html>

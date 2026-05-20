@@ -3,8 +3,7 @@
 
 from __future__ import annotations
 
-import json
-import socket
+from bank_common import run_bank_server
 
 HOST = "127.0.0.1"
 PORT = 5001
@@ -34,20 +33,7 @@ def handle_message(balance: int, msg: dict) -> tuple[int, dict]:
 
 
 def main() -> None:
-    balance = INITIAL_BALANCE
-    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    server.bind((HOST, PORT))
-    server.listen()
-    print(f"[Banco A] Escutando na porta {PORT}")
-
-    while True:
-        conn, _ = server.accept()
-        with conn:
-            raw = conn.recv(65536).decode()
-            msg = json.loads(raw)
-            balance, reply = handle_message(balance, msg)
-            conn.sendall(json.dumps(reply).encode())
+    run_bank_server(HOST, PORT, "Banco A", INITIAL_BALANCE, handle_message)
 
 
 if __name__ == "__main__":
