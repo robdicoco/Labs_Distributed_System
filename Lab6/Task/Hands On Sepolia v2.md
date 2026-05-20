@@ -54,37 +54,52 @@ O 2PC decide se a transação distribuída pode ser concluída.
 
 A blockchain não substitui o 2PC neste lab. Ela funciona como:
     - trilha de auditoria;
-     - registro imutável da decisão;
+    - registro imutável da decisão;
     - prova pública de que a transação foi finalizada como COMMIT ou ABORT.
 
 ### Estrutura do Projeto
 
 ```sh
-lab-2pc-blockchain/
-├── contracts/
+lab-2pc-foundry/
+├── src/
 │   └── CommitLog.sol
-├── scripts/
-│   └── deploy.js
+├── script/
+│   └── DeployCommitLog.s.sol
 ├── coordinator.js
 ├── bankA.js
 ├── bankB.js
+├── foundry.toml
 ├── package.json
-├── hardhat.config.js
 └── .env
 ```
 
 ## 1 - Criar o Projeto
 
+Instale o Foundry:
+
 ```sh
-mkdir lab-2pc-blockchain
-cd lab-2pc-blockchain
+curl -L https://foundry.paradigm.xyz | bash
+```
+
+Inicialize o Foundry:
+
+```sh
+foundryup
+```
+
+Crie o projeto:
+```sh
+mkdir lab-2pc-foundry
+cd lab-2pc-foundry
+
+forge init
 npm init -y
-npm install --save-dev hardhat @nomicfoundation/hardhat-toolbox
 npm install ethers dotenv
-npx hardhat init
 ```
 
 ## 2 - Smart Contract
+
+Crie o `src/CommitLog.sol` 
 
 ```solidity
 // SPDX-License-Identifier: MIT
@@ -151,68 +166,87 @@ contract CommitLog {
 ```
 
 ## 3 - Sepolia
+
 Crie o `.env`:
 
 ```env
 SEPOLIA_RPC_URL=https://sepolia.infura.io/v3/SUA_CHAVE
-PRIVATE_KEY=SUA_PRIVATE_KEY_SEM_0x
+PRIVATE_KEY=SUA_PRIVATE_KEY_COM_0x
 CONTRACT_ADDRESS=
 ```
 
-## 4 - Hardhat config
+## 4 - Configure o Foundry
 
-Edite `hardhat.config.js`:
+Edite `foundry.toml`:
 
-```js
-require("@nomicfoundation/hardhat-toolbox");
-require("dotenv").config();
+```toml
+[profile.default]
+src = "src"
+out = "out"
+libs = ["lib"]
+solc_version = "0.8.24"
+optimizer = true
+optimizer_runs = 200
 
-module.exports = {
-  solidity: "0.8.24",
-  networks: {
-    sepolia: {
-      url: process.env.SEPOLIA_RPC_URL,
-      accounts: [process.env.PRIVATE_KEY],
-      chainId: 11155111,
-    },
-  },
-};
+[rpc_endpoints]
+sepolia = "${SEPOLIA_RPC_URL}"
 ```
 
 ## 5 - Deploy do contrato:
-Crie `scripts/deploy.js`:
 
-```js
-const hre = require("hardhat");
+Crie `script/DeployCommitLog.s.sol`:
 
-async function main() {
-  const CommitLog = await hre.ethers.getContractFactory("CommitLog");
-  const commitLog = await CommitLog.deploy();
+```solidity
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
 
-  await commitLog.waitForDeployment();
+import "forge-std/Script.sol";
+import "../src/CommitLog.sol";
 
-  console.log("CommitLog deployed to:", await commitLog.getAddress());
+contract DeployCommitLog is Script {
+    function run() external returns (CommitLog) {
+        vm.startBroadcast();
+
+        CommitLog commitLog = new CommitLog();
+
+        vm.stopBroadcast();
+
+        return commitLog;
+    }
 }
-
-main().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});
 ```
 
-### 5.1 - Execute:
+### 5.1 - Compilar:
 
 ```sh
-npx hardhat compile
-npx hardhat run scripts/deploy.js --network sepolia
+forge build
 ```
 
-### 5.2 Copie o endereço do contrato para o .env:
+### 5.2 - Fazer o Deploy na Rede Sepolia
 
-```env 
+
+Carregue as variáveis de ambiente:
+
+```sh
+source .env
+```
+
+Faça o deploy:
+```sh
+forge script script/DeployCommitLog.s.sol:DeployCommitLog \
+  --rpc-url $SEPOLIA_RPC_URL \
+  --private-key $PRIVATE_KEY \
+  --broadcast
+```
+
+> O Foundry também permite deploy direto com forge create, mas para aula o forge script é mais didático porque mostra o fluxo de implantação como código. A própria documentação do Foundry apresenta forge como ferramenta de build, teste, debug, deploy e verificação de smart contracts.
+
+### 5.3 - Após o deploy, copie o endereço do contrato e atualize o .env:
+
+```env
 SEPOLIA_RPC_URL=https://sepolia.infura.io/v3/SUA_CHAVE
-PRIVATE_KEY=SUA_PRIVATE_KEY_SEM_0x
-CONTRACT_ADDRESS=COLE_O_ENDEREÇO_AQUI
+PRIVATE_KEY=SUA_PRIVATE_KEY_COM_0x
+CONTRACT_ADDRESS=0xENDERECO_DO_CONTRATO
 ```
 
 ## 6 - Participante Banco A
@@ -314,6 +348,7 @@ const abi = [
 
 const provider = new ethers.JsonRpcProvider(process.env.SEPOLIA_RPC_URL);
 const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
+
 const contract = new ethers.Contract(
   process.env.CONTRACT_ADDRESS,
   abi,
@@ -404,28 +439,60 @@ node bankB.js
 ```sh
 node coordinator.js
 ```
+> Não esqueça de anotar os dados do `tx-`
 
-### Saída esperada:
+### 10 - Consultar Decisão com CAST
+
+> Ajuste o valor de `tx-123` de acordo com o valor obtido no deploy do contrato
 
 ```sh
-Iniciando transação tx-...
-Transferência: Banco A -> Banco B | Valor: 50
-[Coordenador] Voto de Banco A: YES
-[Coordenador] Voto de Banco B: YES
-[Coordenador] Decisão final: COMMIT
-[Coordenador] Registrando decisão na Sepolia...
-Hash da transação: 0x...
+cast call $CONTRACT_ADDRESS \
+  "getDecision(string)(uint8)" \
+  "tx-123" \
+  --rpc-url $SEPOLIA_RPC_URL
 ```
 
-### O que aconteceu?
+### Resultado esperado:
 
-1. O coordenador iniciou uma transação distribuída.
-1. Banco A verificou se tinha saldo.
-1. Banco B confirmou que poderia receber.
-1. Todos votaram YES.
-1. O coordenador decidiu COMMIT.
-1. A blockchain registrou a decisão final.
+```sh
+1
+```
 
+### Interpretação:
+
+```sh
+0 = UNKNOWN
+1 = COMMIT
+2 = ABORT
+```
+
+> `cast` é a ferramenta de linha de comando do Foundry para interação com redes Ethereum.
+
+
+### Explicação:
+
+Papel do 2PC
+
+O protocolo 2PC controla a decisão distribuída:
+
+ ```sh
+ |===============================|
+ | PREPARE → VOTE → COMMIT/ABORT |
+ |===============================|
+ ```
+
+ Ele garante que os participantes não fiquem em estados contraditórios.
+
+ ### Papel da blockchain
+
+A Sepolia registra:
+
+```sh
+transactionId
+decision
+timestamp
+coordinator
+```
 
 ## 10 - Teste de ABORT
 
@@ -446,3 +513,20 @@ Como o Banco A tem saldo `100`, ele votará `NO`.
 ```
 
 ### Nesse caso, nenhuma conta é alterada, mas a decisão ABORT também é registrada na blockchain.
+
+## 11 - Comando para ler o registro do contrato:
+
+```sh 
+cast call $CONTRACT_ADDRESS \
+  "records(string)(string,uint8,uint256,address)" \
+  "tx-123" \
+  --rpc-url $SEPOLIA_RPC_URL
+  ```
+
+> para converter o Unix timestampt UTC:
+
+  ```sh
+  date -d @1714421100
+  ```
+Hands On Sepolia.md
+Displaying Hands On Sepolia.md.
