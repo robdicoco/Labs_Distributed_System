@@ -1,0 +1,10 @@
+[project]
+name = "lab7-pqc-hsm"
+version = "0.1.0"
+description = "Post-quantum KEM (ML-KEM) + RSA/AES demos and HSM signing scripts"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "cryptography>=42.0.0",
+    "pqcrypto>=0.4.0",
+]
