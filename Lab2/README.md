@@ -1,4 +1,4 @@
-# Sockets e threads
+# Lab 2 — Sockets e threads
 
 Pequeno exemplo de **TCP**, **threading** e **sincronização**: um servidor aceita conexões em `127.0.0.1:65432` e trata cada cliente numa thread; o cliente lança 10 threads que só começam a conectar depois de um `threading.Event` comum (“starter pistol”), para demonstrar partida sincronizada.
 

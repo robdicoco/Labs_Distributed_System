@@ -1,7 +1,9 @@
+import os
 import socket
 import time
 
-HOST = 'server'
+# Local: 127.0.0.1 (default). Docker: SERVER_HOST=server python client/client.py
+HOST = os.environ.get("SERVER_HOST", "127.0.0.1")
 PORT = 5000
 
 time.sleep(3)

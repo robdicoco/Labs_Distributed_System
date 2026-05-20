@@ -68,15 +68,15 @@ Contract logic, bank balances, ports **5001/5002**, and coordinator 2PC flow are
 - [x] `bank_a.py` / `bank_b.py`: TCP **5001** / **5002**; JSON `PREPARE` / `COMMIT` / `ABORT`; balances **100** / **20**; Bank A votes NO if `balance < amount`.
 - [x] `coordinator.py` + `coordinator/index.html`: HTTP UI at **:8788**; 2PC via `/api/2pc`; **`recordDecision`** signed in **MetaMask** (no `PRIVATE_KEY`).
 - [x] ABI served from `out/CommitLog.sol/CommitLog.json` via `/api/abi`.
-- [ ] `.env`: `CONTRACT_ADDRESS` (and `SEPOLIA_RPC_URL` for `cast` only).
+- [x] `.env`: `CONTRACT_ADDRESS` (and `SEPOLIA_RPC_URL` for `cast` only).
 
 ## Phase D — Run, verify on-chain, ABORT test
 
-- [ ] Terminal 1: `uv run python bank_a.py`
-- [ ] Terminal 2: `uv run python bank_b.py`
-- [ ] Terminal 3: `uv run python coordinator.py` → http://127.0.0.1:8788 → MetaMask sign
-- [ ] Logs: YES/YES → COMMIT; Sepolia tx hash printed.
-- [ ] **Read decision with `cast`** (v2 §10), after `source .env`, using the real `tx-…` from the coordinator:
+- [x] Terminal 1: `uv run python bank_a.py`
+- [x] Terminal 2: `uv run python bank_b.py`
+- [x] Terminal 3: `uv run python coordinator.py` → http://127.0.0.1:8788 → MetaMask sign
+- [x] Logs: YES/YES → COMMIT; Sepolia tx hash printed.
+- [x] **Read decision with `cast`** (v2 §10), after `source .env`, using the real `tx-…` from the coordinator:
 
 ```bash
 cast call "$CONTRACT_ADDRESS" \
@@ -87,7 +87,7 @@ cast call "$CONTRACT_ADDRESS" \
 
 Expected after COMMIT: `1` (`0` = UNKNOWN, `1` = COMMIT, `2` = ABORT).
 
-- [ ] **Read full record with `cast`** (v2 §11):
+- [x] **Read full record with `cast`** (v2 §11):
 
 ```bash
 cast call "$CONTRACT_ADDRESS" \
