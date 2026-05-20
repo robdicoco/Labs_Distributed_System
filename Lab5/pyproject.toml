@@ -1,0 +1,8 @@
+[project]
+name = "lab5-hmac-middleware"
+version = "0.1.0"
+description = "HMAC-signed HTTP middleware (replay protection, timestamp window)"
+requires-python = ">=3.10"
+dependencies = [
+    "flask>=3.0.0",
+]

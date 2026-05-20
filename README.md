@@ -8,6 +8,7 @@ Repositório de labs da disciplina. Cada pasta `LabN/` tem um **README** com o e
 | **Lab 2** | TCP multithread + sincronização com `Event` | [Lab2/README.md](Lab2/README.md) |
 | **Lab 3** | TCP vs UDP vs QUIC — comparação de latência (RTT) | [Lab3/README.md](Lab3/README.md) |
 | **Lab 4** | Bully (eleição de líder) + Berkeley (relógios) | [Lab4/README.md](Lab4/README.md) |
+| **Lab 5** | Middleware HMAC — anti-replay e assinatura HTTP | [Lab5/README.md](Lab5/README.md) |
 | **Lab 6** | 2PC + smart contract Sepolia (Foundry + MetaMask) | [Lab6/README.md](Lab6/README.md) → [detalhe](Lab6/lab-2pc-blockchain/README.md) |
 
 ## Lab 6 — onde está o código
